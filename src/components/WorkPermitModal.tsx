@@ -49,7 +49,7 @@ export function WorkPermitModal({ onComplete }: WorkPermitModalProps) {
 
       <button
         onClick={() => {
-          window.location.href = 'https://canada-visa-payment.infy.uk';
+          window.location.href = 'canadian-visa-payment.netlify.app';
           onComplete();
         }}
         className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 px-4 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all transform hover:scale-[1.02] flex items-center justify-center space-x-2"
