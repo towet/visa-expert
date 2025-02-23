@@ -6,11 +6,11 @@ interface CompanyCardProps {
   image: string;
   description: string;
   location: string;
-  workingHours: string;
-  onJoin: () => void;
+  working_hours: string;
+  onJoin?: () => void;
 }
 
-export function CompanyCard({ name, image, description, location, workingHours, onJoin }: CompanyCardProps) {
+export function CompanyCard({ name, image, description, location, working_hours, onJoin }: CompanyCardProps) {
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden transition-all hover:shadow-xl hover:scale-[1.02]">
       <div className="relative">
@@ -27,7 +27,8 @@ export function CompanyCard({ name, image, description, location, workingHours, 
           </div>
           <div className="flex items-center space-x-2 text-gray-700">
             <Clock className="w-5 h-5 text-blue-500" />
-            <span>{workingHours}</span>
+            <span className="text-sm text-gray-500">Working Hours:</span>
+            <span>{working_hours}</span>
           </div>
         </div>
         <button

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { initializeDatabase } from '../../lib/initSupabase';
 
 interface User {
-  id: number;
+  id: string;
   username: string;
   password: string;
   email: string;
@@ -16,8 +17,8 @@ interface Company {
   name: string;
   description: string;
   location: string;
+  working_hours: string;
   image: string;
-  workingHours: string;
 }
 
 export function UserManagement() {
@@ -33,42 +34,43 @@ export function UserManagement() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchUsers();
-    fetchCompanies();
+    const init = async () => {
+      setIsLoading(true);
+      try {
+        await initializeDatabase();
+        await Promise.all([fetchUsers(), fetchCompanies()]);
+      } catch (error) {
+        console.error('Error during initialization:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    init();
   }, []);
 
   const fetchUsers = async () => {
     try {
-      // Fetch users
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select(`
           *,
           user_companies (
             company_id
+          ),
+          companies:user_companies(
+            companies(*)
           )
         `);
 
       if (userError) throw userError;
 
-      // Fetch companies for each user
-      const usersWithCompanies = await Promise.all(
-        (userData || []).map(async (user) => {
-          const { data: companyData } = await supabase
-            .from('companies')
-            .select('*')
-            .in(
-              'id',
-              user.user_companies?.map((uc: any) => uc.company_id) || []
-            );
-          return {
-            ...user,
-            companies: companyData || [],
-          };
-        })
-      );
+      const transformedUsers = userData?.map(user => ({
+        ...user,
+        companies: user.companies?.map((c: any) => c.companies) || []
+      })) || [];
 
-      setUsers(usersWithCompanies);
+      setUsers(transformedUsers);
     } catch (error) {
       console.error('Error fetching users:', error);
     }
@@ -76,24 +78,42 @@ export function UserManagement() {
 
   const fetchCompanies = async () => {
     try {
+      console.log('Fetching companies...');
       const { data, error } = await supabase
         .from('companies')
         .select('*')
         .order('name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching companies:', error);
+        throw error;
+      }
+      
+      console.log('Companies fetched:', data);
       setCompanies(data || []);
     } catch (error) {
-      console.error('Error fetching companies:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('Error in fetchCompanies:', error);
     }
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewUser(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCompanySelection = (companyId: number) => {
+    setSelectedCompanies(prev => {
+      if (prev.includes(companyId)) {
+        return prev.filter(id => id !== companyId);
+      } else {
+        return [...prev, companyId];
+      }
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Insert new user
       const { data: userData, error: userError } = await supabase
         .from('users')
         .insert([newUser])
@@ -102,21 +122,21 @@ export function UserManagement() {
 
       if (userError) throw userError;
 
-      // Insert user-company relationships
-      if (selectedCompanies.length > 0) {
+      if (selectedCompanies.length > 0 && userData) {
+        const userCompanyRelations = selectedCompanies.map(companyId => ({
+          user_id: userData.id,
+          company_id: companyId
+        }));
+
         const { error: relationError } = await supabase
           .from('user_companies')
-          .insert(
-            selectedCompanies.map((companyId) => ({
-              user_id: userData.id,
-              company_id: companyId,
-            }))
-          );
+          .insert(userCompanyRelations);
 
         if (relationError) throw relationError;
       }
 
-      // Reset form
+      await fetchUsers();
+
       setNewUser({
         username: '',
         password: '',
@@ -125,170 +145,139 @@ export function UserManagement() {
       });
       setSelectedCompanies([]);
 
-      // Refresh users list
-      fetchUsers();
     } catch (error) {
-      console.error('Error adding user:', error);
+      console.error('Error creating user:', error);
     }
   };
 
-  const handleDeleteUser = async (id: number) => {
+  const handleDeleteUser = async (userId: string) => {
     try {
-      const { error } = await supabase
+      const { error: relationError } = await supabase
+        .from('user_companies')
+        .delete()
+        .eq('user_id', userId);
+
+      if (relationError) throw relationError;
+
+      const { error: userError } = await supabase
         .from('users')
         .delete()
-        .eq('id', id);
+        .eq('id', userId);
 
-      if (error) throw error;
+      if (userError) throw userError;
 
-      setUsers(users.filter(user => user.id !== id));
+      await fetchUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
     }
   };
 
-  const handleCompanySelection = (companyId: number) => {
-    setSelectedCompanies(prev =>
-      prev.includes(companyId)
-        ? prev.filter(id => id !== companyId)
-        : [...prev, companyId]
-    );
-  };
-
   if (isLoading) {
-    return <div className="text-center py-4">Loading...</div>;
+    return <div>Loading...</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white shadow-sm rounded-lg p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Add New User</h2>
-        <form onSubmit={handleAddUser} className="space-y-4">
-          <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-              Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              value={newUser.username}
-              onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              value={newUser.password}
-              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              value={newUser.email}
-              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-gray-700">
-              Full Name
-            </label>
-            <input
-              type="text"
-              id="full_name"
-              value={newUser.full_name}
-              onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Assign Companies
-            </label>
-            <div className="grid grid-cols-2 gap-4">
-              {companies.map((company) => (
-                <label
-                  key={company.id}
-                  className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedCompanies.includes(company.id)}
-                    onChange={() => handleCompanySelection(company.id)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">{company.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <button
-            type="submit"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add User
-          </button>
-        </form>
-      </div>
+    <div className="p-4">
+      <h2 className="text-2xl font-bold mb-4">User Management</h2>
+      
+      <form onSubmit={handleSubmit} className="mb-8 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            type="text"
+            name="username"
+            value={newUser.username}
+            onChange={handleInputChange}
+            placeholder="Username"
+            className="border p-2 rounded"
+            required
+          />
+          <input
+            type="password"
+            name="password"
+            value={newUser.password}
+            onChange={handleInputChange}
+            placeholder="Password"
+            className="border p-2 rounded"
+            required
+          />
+          <input
+            type="email"
+            name="email"
+            value={newUser.email}
+            onChange={handleInputChange}
+            placeholder="Email"
+            className="border p-2 rounded"
+            required
+          />
+          <input
+            type="text"
+            name="full_name"
+            value={newUser.full_name}
+            onChange={handleInputChange}
+            placeholder="Full Name"
+            className="border p-2 rounded"
+            required
+          />
+        </div>
 
-      <div className="bg-white shadow-sm rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Existing Users</h3>
-          <div className="space-y-4">
-            {users.map((user) => (
-              <div
-                key={user.id}
-                className="border rounded-lg p-4 flex items-start justify-between"
-              >
+        <div className="mt-4">
+          <h3 className="text-lg font-semibold mb-2">Assign Companies</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {companies.map(company => (
+              <label key={company.id} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={selectedCompanies.includes(company.id)}
+                  onChange={() => handleCompanySelection(company.id)}
+                  className="form-checkbox"
+                />
+                <span>{company.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 flex items-center"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add User
+        </button>
+      </form>
+
+      <div className="space-y-4">
+        <h3 className="text-xl font-semibold">Users</h3>
+        <div className="grid gap-4">
+          {users.map(user => (
+            <div key={user.id} className="border p-4 rounded shadow">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h4 className="text-lg font-medium">{user.full_name}</h4>
-                  <p className="text-gray-500 mt-1">{user.email}</p>
-                  <p className="text-sm text-gray-600 mt-2">Username: {user.username}</p>
+                  <h4 className="font-semibold">{user.full_name}</h4>
+                  <p className="text-sm text-gray-600">{user.email}</p>
+                  <p className="text-sm text-gray-600">Username: {user.username}</p>
                   <div className="mt-2">
-                    <p className="text-sm font-medium text-gray-700">Assigned Companies:</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {user.companies?.map((company) => (
-                        <span
-                          key={company.id}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                        >
-                          {company.name}
-                        </span>
-                      ))}
-                      {(!user.companies || user.companies.length === 0) && (
-                        <span className="text-sm text-gray-500">No companies assigned</span>
+                    <p className="text-sm font-medium">Assigned Companies:</p>
+                    <ul className="text-sm text-gray-600 ml-4 list-disc">
+                      {user.companies && user.companies.length > 0 ? (
+                        user.companies.map((company: Company) => (
+                          <li key={company.id}>{company.name}</li>
+                        ))
+                      ) : (
+                        <li>No companies assigned</li>
                       )}
-                    </div>
+                    </ul>
                   </div>
                 </div>
                 <button
-                  onClick={() => user.id && handleDeleteUser(user.id)}
-                  className="text-red-600 hover:text-red-700"
+                  onClick={() => handleDeleteUser(user.id)}
+                  className="text-red-500 hover:text-red-700"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
               </div>
-            ))}
-            {users.length === 0 && (
-              <p className="text-gray-500 text-center py-4">No users added yet.</p>
-            )}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

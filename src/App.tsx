@@ -8,6 +8,7 @@ import { WorkPermitModal } from './components/WorkPermitModal';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { supabase } from './lib/supabase';
+import { initializeDatabase } from './lib/initSupabase';
 import { UserCircle2 } from 'lucide-react';
 
 interface Company {
@@ -16,11 +17,11 @@ interface Company {
   description: string;
   location: string;
   image: string;
-  workingHours: string;
+  working_hours: string;
 }
 
 interface User {
-  id: number;
+  id: string; // Changed from number to string for UUID
   username: string;
   full_name: string;
   email: string;
@@ -39,6 +40,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginError, setLoginError] = useState('');
   const [isRedirecting, setIsRedirecting] = useState(false);
+
+  useEffect(() => {
+    initializeDatabase();
+  }, []);
 
   useEffect(() => {
     if (currentUser) {

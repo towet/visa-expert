@@ -8,17 +8,17 @@ interface Company {
   description: string;
   location: string;
   image: string;
-  workingHours: string;
+  working_hours: string;
 }
 
 export function CompanyManagement() {
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [newCompany, setNewCompany] = useState<Company>({
+  const [newCompany, setNewCompany] = useState<Omit<Company, 'id'>>({
     name: '',
     description: '',
     location: '',
     image: '',
-    workingHours: ''
+    working_hours: ''
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -48,17 +48,23 @@ export function CompanyManagement() {
       const { data, error } = await supabase
         .from('companies')
         .insert([newCompany])
-        .select();
-
+        .select()
+        .single();
+      
       if (error) throw error;
 
-      setCompanies([...(data || []), ...companies]);
+      // Add the new company to the list
+      if (data) {
+        setCompanies([data, ...companies]);
+      }
+
+      // Reset the form
       setNewCompany({
         name: '',
         description: '',
         location: '',
         image: '',
-        workingHours: ''
+        working_hours: ''
       });
     } catch (error) {
       console.error('Error adding company:', error);
@@ -142,16 +148,16 @@ export function CompanyManagement() {
             />
           </div>
           <div>
-            <label htmlFor="workingHours" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="working_hours" className="block text-sm font-medium text-gray-700">
               Working Hours
             </label>
             <input
               type="text"
-              id="workingHours"
-              value={newCompany.workingHours}
-              onChange={(e) => setNewCompany({ ...newCompany, workingHours: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              required
+              id="working_hours"
+              value={newCompany.working_hours}
+              onChange={(e) => setNewCompany({ ...newCompany, working_hours: e.target.value })}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              placeholder="e.g., 9:00 AM to 5:00 PM, Monday to Friday"
             />
           </div>
           <button
@@ -178,7 +184,7 @@ export function CompanyManagement() {
                   <p className="text-gray-500 mt-1">{company.location}</p>
                   <p className="text-sm text-gray-600 mt-2">{company.description}</p>
                   <p className="text-sm text-gray-600 mt-1">
-                    Working Hours: {company.workingHours}
+                    Working Hours: {company.working_hours}
                   </p>
                 </div>
                 <button
